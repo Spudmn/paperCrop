@@ -18,19 +18,19 @@ class SplashOutputDev_mod: public SplashOutputDev {
 					   bitmapTopDownA){}
 
 // Transform a point from user space to device space.
-inline void transform(const SplashCoord *matrix,
-			      SplashCoord xi, SplashCoord yi,
-			      SplashCoord *xo, SplashCoord *yo) {
+inline void transform(const double *matrix,
+			      double xi, double yi,
+			      double *xo, double *yo) {
   //                          [ m[0] m[1] 0 ]
   // [xo yo 1] = [xi yi 1] *  [ m[2] m[3] 0 ]
   //                          [ m[4] m[5] 1 ]
   *xo = xi * matrix[0] + yi * matrix[2] + matrix[4];
   *yo = xi * matrix[1] + yi * matrix[3] + matrix[5];
 }
- void fillChar(const SplashCoord*matrix, SplashCoord x, SplashCoord y,
+ void fillChar(const double*matrix, double x, double y,
 			     int c, SplashFont *font) {
   SplashGlyphBitmap glyph;
-  SplashCoord xt, yt;
+  double xt, yt;
   int x0, y0, xFrac, yFrac;
   SplashClipResult clipRes;
   transform(matrix, x, y, &xt, &yt);
@@ -52,7 +52,7 @@ void drawChar(GfxState *state, double x, double y,
 	if(state->getRender()!=3 && font && !state->getFillColorSpace()->isNonMarking())
 		{
 			
-			fillChar(getSplash()->getMatrix().data(), (SplashCoord)(x-originX), (SplashCoord)(y-originY), code, font);
+			fillChar(getSplash()->getMatrix().data(), (double)(x-originX), (double)(y-originY), code, font);
 		}
 }
 };

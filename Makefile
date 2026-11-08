@@ -1,16 +1,25 @@
 all: release
 
+# Local Poppler install produced by /workspace/Build_Poppler.sh
+POPPLER_PREFIX ?= /workspace/local-poppler-26.05.0
+
 # to compile and install paperCrop to ~/bin/
 # make install_dependencies_ubuntu11.10; make; make console; make install
 .PHONY: release debug clean console
 release:
-	mkdir -p build_linux;cd build_linux;cmake ..;make
+	mkdir -p build_linux
+	cd build_linux && PKG_CONFIG_PATH=$(POPPLER_PREFIX)/lib/pkgconfig:$$PKG_CONFIG_PATH cmake ..
+	$(MAKE) -C build_linux
 
 debug:
-	mkdir -p build_linux_debug;cd build_linux_debug;cmake -D "CMAKE_BUILD_TYPE=Debug" ..; make
+	mkdir -p build_linux_debug
+	cd build_linux_debug && PKG_CONFIG_PATH=$(POPPLER_PREFIX)/lib/pkgconfig:$$PKG_CONFIG_PATH cmake -D "CMAKE_BUILD_TYPE=Debug" ..
+	$(MAKE) -C build_linux_debug
 
 console: 
-	mkdir -p build_linux_console;cd build_linux_console;cmake -D "CONSOLE=True" ..;make
+	mkdir -p build_linux_console
+	cd build_linux_console && PKG_CONFIG_PATH=$(POPPLER_PREFIX)/lib/pkgconfig:$$PKG_CONFIG_PATH cmake -D "CONSOLE=True" ..
+	$(MAKE) -C build_linux_console
 
 clean:
 	rm -rf build_linux

@@ -28,13 +28,23 @@
 class PDFmodel;
 
 class PDFwin;
+
+typedef enum Rect_Type {
+		NORMAL = 0,
+		IMAGE,
+		CODE,
+		//TABLE,
+		LAST_TYPE
+	    }Rect_Type;
+
 class SelectionRectangle : public TRect
 {
 public:
+	Rect_Type Type;
 	Double2D  p1, p2;	// doc coord in [0,1] range
 
-	SelectionRectangle (){left=-1;right=0;}	// invalid.
-	bool isValid();
+	SelectionRectangle (){left=-1;right=0;Type = NORMAL;}	// invalid.
+		bool isValid();
 	void updateScreenCoord(PDFwin const& win);
 	int handle(PDFwin const& win, TString const& event);
 };
@@ -55,8 +65,13 @@ public:
 
 	int getNumPages();
 	int getNumRects();
+	bool Rect_Is_Image(int RectNum);
+	bool Rect_Is_Code(int RectNum);
 	void getRectSize(int pageNo, int rectNo, SelectionRectangle& rect);
 	void getRectImage_width(int pageNo, int rectNo, int width, CImage& image);
+	void getRectHTML(int pageNo, int rectNo, int width, bool TextOnly, const char* html);
+	void Text_To_HTML(const char* Text_Filename, const char* HTML_Filename);
+	void getRectHTML_OCR(int pageNo, int rectNo, CImage& image);
 	void getRectImage_height(int pageNo, int rectNo, int height, CImage& image);
 	double getDPI_height(int pageNo, int rectNo, int height);
 	double getDPI_width(int pageNo, int rectNo, int width);
@@ -81,6 +96,7 @@ public:
 	FlLayout* mLayout;
 
 	TString mOutDir;
+	bool mRunning_Update;
 
 	Int2D toWindowCoord(double x, double y) const;
 	Double2D   toDocCoord(int x, int y) const;
@@ -88,4 +104,10 @@ public:
 	std::list<SelectionRectangle> mRects;
 	std::list<SelectionRectangle>::iterator mSelectedRect;
 	SelectionRectangle& selectedRect()	{return *mSelectedRect;}
+
+	void Save_SelectionRectangles(void);
+	bool Load_SelectionRectangles(std::list<SelectionRectangle>& pSel);
+	bool There_Are_Saved_Rects(void);
+	void NextPage(void);
+
 };

@@ -2557,3 +2557,5 @@ function os.open(t)
 		os.execute('start cmd/c '..t)
 	end
 end
+require('mylib_debugger')
+require('mylib_filesystem')

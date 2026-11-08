@@ -30,14 +30,16 @@ if(UNIX)
 	# set(LUA_INCLUDE "/usr/include/lua5.1" )
 	# set(LUA_LIB "${paperCrop_SOURCE_DIR}/../Lua5.1.4/src" "${paperCrop_SOURCE_DIR}/../lua-5.1.4/src")
 	include(FindPkgConfig)
-	find_package(FLTK REQUIRED)
+        set(FLTK_INCLUDE_DIR /usr/include)
+        execute_process(COMMAND fltk-config --use-images --ldflags OUTPUT_VARIABLE FLTK_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
+        separate_arguments(FLTK_LIBRARIES UNIX_COMMAND "${FLTK_LDFLAGS}")
 	find_package(Lua51 REQUIRED)
 	if(APPLE)
-		pkg_check_modules(poppler REQUIRED )
+		pkg_check_modules(poppler REQUIRED poppler)
 	else()
 		# find_package(Luabind REQUIRED)
 		pkg_check_modules(Fontconfig REQUIRED fontconfig)
-		pkg_check_modules(poppler REQUIRED )
+		pkg_check_modules(poppler REQUIRED poppler)
 		#pkg_check_modules(DevIL REQUIRED ILU)
 	endif()
 	set(image_INCLUDE) # all in /usr/include 
@@ -71,6 +73,9 @@ if(UNIX)
 
 			${LUA_INCLUDE_DIR}
 			${paperCrop_SOURCE_DIR}
+			${paperCrop_SOURCE_DIR}/../Poppler_upstream
+			${paperCrop_SOURCE_DIR}/../Poppler_upstream/utils
+			${paperCrop_SOURCE_DIR}/../Poppler_upstream/build
 			${poppler_INCLUDE_DIRS}
 			/usr/include/poppler
 			#${DevIL_INCLUDE_DIRS}
@@ -83,6 +88,9 @@ if(UNIX)
 			${LUA_INCLUDE_DIR}
 			${FLTK_INCLUDE_DIR}
 			${paperCrop_SOURCE_DIR}
+			${paperCrop_SOURCE_DIR}/../Poppler_upstream
+			${paperCrop_SOURCE_DIR}/../Poppler_upstream/utils
+			${paperCrop_SOURCE_DIR}/../Poppler_upstream/build
 			${poppler_INCLUDE_DIRS}
 			/usr/include/poppler
 			/usr/local/include/poppler
@@ -249,6 +257,19 @@ set(src
   "./utility/TypeString.h"
   "./utility/TextFile.cpp"
   "./utility/TextFile.h"
+
+  # Poppler utils HTML output classes are not installed as public headers.
+  # Build directly from the upstream source tree so PDFwin can use HtmlOutputDev.
+  "../Poppler_upstream/utils/HtmlOutputDev.cc"
+  "../Poppler_upstream/utils/HtmlOutputDev.h"
+  "../Poppler_upstream/utils/HtmlFonts.cc"
+  "../Poppler_upstream/utils/HtmlFonts.h"
+  "../Poppler_upstream/utils/HtmlLinks.cc"
+  "../Poppler_upstream/utils/HtmlLinks.h"
+  "../Poppler_upstream/utils/InMemoryFile.cc"
+  "../Poppler_upstream/utils/InMemoryFile.h"
+  "../Poppler_upstream/utils/HtmlUtils.h"
+  "./PopplerHtmlGlobals.cpp"
   )
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${paperCrop_SOURCE_DIR})

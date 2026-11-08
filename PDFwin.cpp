@@ -25,6 +25,10 @@
 #include "PDFwin.h"
 
 #include <vector>
+#include <string>
+#include <fstream>
+#include <cctype>
+#include <cstring>
 
 #include "utility/FlLayout.h"
 #include "utility/FltkAddon.h"
@@ -36,6 +40,7 @@
 #include "Object.h" /* must be included before SplashOutputDev.h */
 #include "PDFDoc.h"
 #include <splash/SplashBitmap.h>
+#include <utils/HtmlOutputDev.h>
 #include <SplashOutputDev.h>
 #include "TextOutputDev.h"
 #include "NullOutputDev.h"
@@ -58,6 +63,69 @@ enum {TC_c=0, TC_x, TC_y, TC_w, TC_h, TC_fx, TC_fy};
 #define USE_FONT_DETECTION
 // #define USE_NULLOUTPUTDEV
 
+
+namespace {
+	static std::string trim_copy_ascii(const std::string& s)
+	{
+		size_t begin = 0;
+		while (begin < s.size() && std::isspace((unsigned char)s[begin]))
+			++begin;
+
+		size_t end = s.size();
+		while (end > begin && std::isspace((unsigned char)s[end - 1]))
+			--end;
+
+		return s.substr(begin, end - begin);
+	}
+
+	static bool ends_with_str(const std::string& value, const char* suffix)
+	{
+		const size_t suffixLen = std::strlen(suffix);
+		if (value.size() < suffixLen)
+			return false;
+		return value.compare(value.size() - suffixLen, suffixLen, suffix) == 0;
+	}
+
+	static bool read_file_to_string(const std::string& path, std::string& out)
+	{
+		std::ifstream in(path.c_str(), std::ios::in | std::ios::binary);
+		if (!in.is_open())
+			return false;
+		out.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		return true;
+	}
+
+	static bool find_tag_value(const std::string& text, const std::string& tag, std::string& value)
+	{
+		const std::string openTag = "<" + tag + ">";
+		const std::string closeTag = "</" + tag + ">";
+		const size_t start = text.find(openTag);
+		if (start == std::string::npos)
+			return false;
+		const size_t contentStart = start + openTag.size();
+		const size_t end = text.find(closeTag, contentStart);
+		if (end == std::string::npos)
+			return false;
+		value = text.substr(contentStart, end - contentStart);
+		return true;
+	}
+
+	static bool get_page_block(const std::string& xml, int pageNo, std::string& pageBlock)
+	{
+		const std::string pageTag = "<Page index=\"" + std::to_string(pageNo) + "\">";
+		const size_t pageStart = xml.find(pageTag);
+		if (pageStart == std::string::npos)
+			return false;
+
+		const size_t contentStart = pageStart + pageTag.size();
+		const size_t pageEnd = xml.find("</Page>", contentStart);
+		if (pageEnd == std::string::npos)
+			return false;
+
+		pageBlock = xml.substr(contentStart, pageEnd - contentStart);
+		return true;
+	}
+}
 
 class PDFmodel
 {
@@ -119,7 +187,7 @@ public:
 		white[1]=0xff;
 		white[2]=0xff;
 
-		// _outputDev = new SplashOutputDev_mod(splashModeRGB8, 4, gFalse, white, bitmapTopDown);
+		// _outputDev = new SplashOutputDev_mod(splashModeRGB8, 4, false, white, bitmapTopDown);
 		_outputDev = new SplashOutputDev(splashModeRGB8, 4, white, bitmapTopDown);
 		if(!_outputDev)
 		{
@@ -245,7 +313,7 @@ public:
 			_pdfDoc->displayPage(_nullOutputDev, pageNo+1, DPI, DPI, 0, false, true, false);
 #endif
 			_textCacheState=-1;
-				/*//_pdfDoc->displayPageSlice(_outputDev, pageNo+1, DPI, DPI, 0, gFalse, gTrue, gFalse, 20,20, 400,400);
+				/*//_pdfDoc->displayPageSlice(_outputDev, pageNo+1, DPI, DPI, 0, false, true, false, 20,20, 400,400);
 				if(zoom2<zoom1)
 				{
 					if(h==_outputDev->getBitmap()->getHeight())
@@ -341,6 +409,32 @@ SelectionRectangle& find(std::list<SelectionRectangle>& mRects, int rectNo)
 	return *R;
 }
 
+bool PDFwin::Rect_Is_Image(int RectNum)
+{
+	SelectionRectangle& rect=::find(mRects, RectNum);
+	if (rect.Type == IMAGE)
+		{
+		return	(true);
+		}
+	else
+		{
+		return (false);
+		}
+}
+
+bool PDFwin::Rect_Is_Code(int RectNum)
+{
+	SelectionRectangle& rect=::find(mRects, RectNum);
+	if (rect.Type == CODE)
+		{
+		return	(true);
+		}
+	else
+		{
+		return (false);
+		}
+}
+
 
 double PDFwin::getDPI_width(int pageNo, int rectNo, int width)
 {
@@ -388,6 +482,343 @@ void PDFwin::getRectImage_width(int pageNo, int rectNo, int width, CImage& image
 
 	delete bmp;
 }
+
+static void printCSS(FILE *f)
+{
+  // Image flip/flop CSS
+  // Source:
+  // http://stackoverflow.com/questions/1309055/cross-browser-way-to-flip-html-image-via-javascript-css
+  // tested in Chrome, Fx (Linux) and IE9 (W7)
+  static const char css[] =
+    "<style type=\"text/css\">" "\n"
+    "<!--" "\n"
+    ".xflip {" "\n"
+    "    -moz-transform: scaleX(-1);" "\n"
+    "    -webkit-transform: scaleX(-1);" "\n"
+    "    -o-transform: scaleX(-1);" "\n"
+    "    transform: scaleX(-1);" "\n"
+    "    filter: fliph;" "\n"
+    "}" "\n"
+    ".yflip {" "\n"
+    "    -moz-transform: scaleY(-1);" "\n"
+    "    -webkit-transform: scaleY(-1);" "\n"
+    "    -o-transform: scaleY(-1);" "\n"
+    "    transform: scaleY(-1);" "\n"
+    "    filter: flipv;" "\n"
+    "}" "\n"
+    ".xyflip {" "\n"
+    "    -moz-transform: scaleX(-1) scaleY(-1);" "\n"
+    "    -webkit-transform: scaleX(-1) scaleY(-1);" "\n"
+    "    -o-transform: scaleX(-1) scaleY(-1);" "\n"
+    "    transform: scaleX(-1) scaleY(-1);" "\n"
+    "    filter: fliph + flipv;" "\n"
+    "}" "\n"
+    "-->" "\n"
+    "</style>" "\n";
+
+  fwrite( css, sizeof(css)-1, 1, f );
+}
+
+
+static void printHtml_Headder(FILE *f)
+{
+	fprintf(f,"<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title></title>\n");
+
+    fprintf(f, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"/>\n");
+
+    printCSS(f);
+    fprintf(f,"</head>\n");
+    fprintf(f,"<body bgcolor=\"#A0A0A0\" vlink=\"blue\" link=\"blue\">\n");
+
+}
+
+
+void PDFwin::NextPage(void)
+{
+	mCurrPage=(mCurrPage+1)%mModel->_pdfDoc->getNumPages();
+	pageChanged();
+	redraw();
+}
+
+void PDFwin::getRectHTML(int pageNo, int rectNo,int width,bool TextOnly,const char * html)
+{
+	Object info;
+	static char extension[5]="png";
+	GooString *docTitle = NULL;
+	GooString *author = NULL, *keywords = NULL, *subject = NULL;
+	GooString *FileName = new GooString(html);
+
+////	FileName->append("_");
+////	FileName->append(GooString::fromInt(pageNo));
+//	FileName->append("_");
+////	FileName->append(GooString::fromInt(rectNo));
+	//FileName->append(".html");
+
+	SelectionRectangle& rect=::find(mRects, rectNo);
+
+	PDFDoc* _pdfDoc=mModel->_pdfDoc ;
+
+//	printf("File_Name: %s \n",FileName->getCString());
+//	printf("get Rect HTML: width: %d  rect.p1.x: %f rect.p1.y: %f rect.p2.x: %f rect.p2.y: %f  \n",width,rect.p1.x,rect.p1.y,rect.p2.x,rect.p2.y);
+//	printf("pageCropWidth: %f \n",pageCropWidth(pageNo));
+//	printf("->calcWidth_DPI(72): %d \n",mModel->calcWidth_DPI(72,pageNo));
+//	printf("->calcWidth_DPI(150): %d \n",mModel->calcWidth_DPI(150,pageNo));
+
+	double DPI = 150;
+	double PageWidth = mModel->calcWidth_DPI(DPI,pageNo);
+	double PageHeight = mModel->calcHeight_DPI(DPI,pageNo);
+	int left=int(rect.p1.x*(double)PageWidth+0.5);
+	int top=int(rect.p1.y*(double)PageHeight+0.5);
+	int right=int(rect.p2.x*(double)PageWidth+0.5);
+	int bottom=int(rect.p2.y*(double)PageHeight+0.5);
+
+	if(rect.Type == IMAGE)
+	{
+		CImage image;
+		getRectImage_width( pageNo, rectNo, width,  image);
+
+		GooString * ImageFileName = new GooString(FileName->toStr().c_str());
+		ImageFileName->append(".png");
+
+		FileName->append(".html");
+		image.save(ImageFileName->toStr().c_str(),-1);
+
+		FILE* file;
+		file=fopen(FileName->toStr().c_str(), "wt");
+
+		if(file)
+			{
+			fprintf(file,"<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"\" xml:lang=\"\">\n<head>\n<title></title>\n");
+
+		    fprintf(file, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"/>\n");
+
+		    printCSS(file);
+		    fprintf(file,"</head>\n");
+		    fprintf(file,"<body bgcolor=\"#A0A0A0\" vlink=\"blue\" link=\"blue\">\n");
+
+		    fprintf(file,"<img src=\"%s\"/><br/>\n",ImageFileName->toStr().c_str());
+		    fprintf(file,"</body>\n</html>\n");
+
+		    fclose(file);
+			}
+		else
+			{
+			printf("file open error %s\n", FileName->toStr().c_str());
+			}
+
+//		table.insert(OPF_Table,"<a href=\"")
+//		print(string.format("%s.html",fileName))
+//		table.insert(OPF_Table,string.format("%s.html",fileName))
+//		table.insert(OPF_Table,"\">")
+//		table.insert(OPF_Table,string.format("Page:%05d_Rect:%02d",pageNo,rectNo))
+//		table.insert(OPF_Table,"</a>\n")
+//		string.format("%05d_%02d",pageNo,rectNo)
+
+		delete ImageFileName;
+	}
+	if (rect.Type == CODE)
+	{
+		HtmlOutputDev*   htmlOut = new HtmlOutputDev(_pdfDoc->getCatalog(),FileName->c_str(),
+				  NULL, //title
+				  NULL, //author
+				  NULL,  //keywords
+			      NULL,  //subject
+				  NULL, //date
+				  extension,
+				  false,      //raw order
+
+				  true, //  fcomplexMode,
+				  true, // finlineImages,
+				  false, // fsingleHtml,
+				  TextOnly, // fignore,
+				  false, // fprintCommands,
+				  false, // fprintHtml,
+				  true, // fnoframes,
+				  false, // fstout,
+				  false, // fxml,
+				  false, // fshowHidden,
+				  true, // fnoMerge,
+				  10.0/100.0, // fwordBreakThreshold
+
+
+				  pageNo+1,
+				  false  //doOutline
+				  );
+
+		_pdfDoc->displayPageSlice(htmlOut, pageNo+1, DPI, DPI, 0, false, true, false, left,top, right-left,bottom-top);
+	    //printf("DPI %f left %d top %d right-left:%d bottom-top:%d",DPI,left,top, right-left,bottom-top);
+		htmlOut->dumpDocOutline(_pdfDoc);
+	    delete htmlOut;
+	}
+	else if (rect.Type == NORMAL)
+	{
+	HtmlOutputDev*   htmlOut = new HtmlOutputDev(_pdfDoc->getCatalog(),FileName->c_str(),
+			  NULL, //title
+			  NULL, //author
+			  NULL,  //keywords
+		      NULL,  //subject
+			  NULL, //date
+			  extension,
+			  false,      //raw order
+
+			  false, //  fcomplexMode,
+			  true, // finlineImages,
+			  false, // fsingleHtml,
+			  TextOnly, // fignore,
+			  false, // fprintCommands,
+			  false, // fprintHtml,
+			  true, // fnoframes,
+			  false, // fstout,
+			  false, // fxml,
+			  false, // fshowHidden,
+			  false, // fnoMerge,
+			  10.0/100.0, // fwordBreakThreshold
+
+
+			  pageNo+1,
+			  false  //doOutline
+			  );
+
+	_pdfDoc->displayPageSlice(htmlOut, pageNo+1, DPI, DPI, 0, false, true, false, left,top, right-left,bottom-top);
+    //printf("DPI %f left %d top %d right-left:%d bottom-top:%d",DPI,left,top, right-left,bottom-top);
+	htmlOut->dumpDocOutline(_pdfDoc);
+    delete htmlOut;
+}
+    delete  FileName;
+}
+
+
+void PDFwin::Text_To_HTML(const char* Text_Filename, const char* HTML_Filename)
+{
+	std::string line;
+	std::vector<std::string> lines;
+	std::ifstream Text_File(Text_Filename);
+
+	std::string This_line;
+	std::string Next_line;
+	std::string Saved_line;
+
+
+	//printf("FileName is %s \n",Text_Filename);
+
+	  if(Text_File.is_open())
+	  {
+		  //printf("In Text To Html is open \n");
+
+	    if(Text_File.good())
+	    {
+	    	printf("In Text To Html good \n");
+    	 while (getline(Text_File, line))
+    		 {
+    		// printf("%s\n",line.c_str());
+   		    lines.push_back(line);
+    		 }
+	    }
+	    Text_File.close();
+	  }
+
+	  //Saved_line = boost::algorithm::trim(lines[0]);
+
+	  Saved_line = trim_copy_ascii(lines[0]);
+	  bool AddSpace;
+	  bool AddNewLine;
+	  for (int i=1; i<lines.size(); i++)
+		  {
+		  AddNewLine = false;
+		  AddSpace = true;
+
+	      Next_line = trim_copy_ascii(lines[i]);
+
+	      if (ends_with_str(Saved_line,"-"))
+	      	  {
+	    	  if (Saved_line.size () > 0)  Saved_line.resize (Saved_line.size () - 1); // remove last char which is the hyphen
+	    	  AddSpace = false;
+	      	  }
+
+	      if (ends_with_str(Saved_line,".") )
+	      	  {
+	    	  AddNewLine = true;
+	      	  }
+
+
+
+	      if (AddNewLine)
+	      {
+	    	  Saved_line = Saved_line + "<br/>\n" + Next_line;
+	      }
+	      else if (AddSpace)
+      	  {
+    	  Saved_line = Saved_line + " " + Next_line;
+      	  }
+	      else{
+	    	  Saved_line = Saved_line + Next_line;
+	      	  }
+
+
+
+		  }
+
+
+		FILE* file;
+		file=fopen(HTML_Filename, "wt");
+		if (file)
+		{
+	    printHtml_Headder(file);
+
+	    fprintf(file,"<a name=29></a>");
+
+
+	    //printf("%s\n",Saved_line.c_str());
+	    fprintf(file,"%s",Saved_line.c_str());
+
+	    fprintf(file,"</body>\n</html>\n");
+		fclose(file);
+		}
+	else
+		{
+		printf("file open error %s\n",HTML_Filename);
+		}
+
+
+
+
+
+
+//	 string line;
+//
+//     Save_First_File(line, List_File, Output_Filename);
+//
+//	 infile.close();
+
+
+}
+
+void PDFwin::getRectHTML_OCR(int pageNo, int rectNo,CImage& image)
+{
+
+	SelectionRectangle& rect=::find(mRects, rectNo);
+
+	PDFDoc* _pdfDoc=mModel->_pdfDoc ;
+	SplashOutputDev* _outputDev=mModel->_outputDev;
+
+
+	double DPI = 300;
+	double PageWidth = mModel->calcWidth_DPI(DPI,pageNo);
+	double PageHeight = mModel->calcHeight_DPI(DPI,pageNo);
+	int left=int(rect.p1.x*(double)PageWidth+0.5);
+	int top=int(rect.p1.y*(double)PageHeight+0.5);
+	int right=int(rect.p2.x*(double)PageWidth+0.5);
+	int bottom=int(rect.p2.y*(double)PageHeight+0.5);
+
+
+	_pdfDoc->displayPageSlice(_outputDev, pageNo+1, DPI, DPI, 0, false, true, false, left,top, right-left,bottom-top);
+
+	SplashBitmap* bmp=_outputDev->takeBitmap();
+
+	image.SetData(bmp->getWidth(), bmp->getHeight(), bmp->getDataPtr(), bmp->getRowSize());
+	delete bmp;
+}
+
 
 double PDFwin::getDPI_height(int pageNo, int rectNo, int height)
 {
@@ -492,6 +923,7 @@ PDFwin::PDFwin(int x, int y, int w, int h)
 	mCurrPage=0;
 	mSelectedRect=mRects.end();
 	_filename=" ";
+	mRunning_Update = false;
 }
 
 void PDFwin::load(const char* filename)
@@ -596,6 +1028,7 @@ int PDFwin::handle(int event)
 				{
 					mRects.erase(mSelectedRect);
 					mSelectedRect=mRects.end();
+					mSelectedRect--;
 					redraw();
 				}
 			}
@@ -610,6 +1043,7 @@ int PDFwin::handle(int event)
 		{
 			if(mSelectedRect!=mRects.end() &&
 				mSelectedRect->corner(Int2D(Fl::event_x(), Fl::event_y())))
+
 			{
 				cursor(FL_CURSOR_NWSE);
 				return 1;
@@ -637,7 +1071,22 @@ int PDFwin::handle(int event)
 			
 			std::list<SelectionRectangle>::iterator i
 				=findRect(Fl::event_x(), Fl::event_y());
+			if (i != mRects.end()) {
+				if (Fl::event_clicks() == 1) {
+					printf("double click\n");
+					if ((*i).Type == NORMAL) {
+						(*i).Type = IMAGE;
+					}
+					else if ((*i).Type == IMAGE) {
+						(*i).Type = CODE;
+					}
+					else{
+						(*i).Type = NORMAL;
+					}
 
+				}
+
+			}
 			if(i!=mRects.end())
 			{
 				// move selected rect
@@ -905,8 +1354,6 @@ void PDFwin::pageChanged()
 		double cropR=layout->findSlider("Crop R")->value()/100.0;
 
 
-//		TRect domain(0,0, bmp->GetWidth(), bmp->GetHeight());
-
 		TRect domain(cropL*bmp->GetWidth(),cropT*bmp->GetHeight(), (1-cropR)*bmp->GetWidth()
 , (1-cropB)*bmp->GetHeight());
 
@@ -1033,6 +1480,27 @@ void PDFwin::pageChanged()
 			mRect.p2=toDocCoord((*i).right+x, (*i).bottom+y);
 			mRect.updateScreenCoord(*this);
 		}
+		
+		if (mRunning_Update)
+		{
+			mRunning_Update = false;
+		}
+		else
+		{
+		if (There_Are_Saved_Rects())
+			{
+			mRects.clear();
+//			Load_SelectionRectangles(mRects);
+//			BOOST_FOREACH( SelectionRectangle sel_rect, mRects )
+///				{
+//				//printf("p1.x %f p1.x %f p1.x %f p1.x %f \n",sel_rect.p1.x,sel_rect.p1.y,sel_rect.p2.x,sel_rect.p2.y);
+//				sel_rect.updateScreenCoord(*this);
+//				}
+//			mSelectedRect=mRects.end();
+//			mSelectedRect--;
+			}
+		}
+		
 	}
 }
 
@@ -1076,10 +1544,41 @@ void PDFwin::draw()
 			if(i!=mSelectedRect)
 				type=FL_BORDER_FRAME;
 
+			if (mRect.Type == IMAGE)
+			{
+				 fl_font(FL_HELVETICA_BOLD,15);
+			fl_draw_box( type, mRect.left, mRect.top, mRect.Width(), mRect.Height(), FL_WHITE);
+
+			 fl_font(FL_HELVETICA,15);
+			fl_draw_box( type, mRect.left, mRect.top, mRect.Width(), mRect.Height(), FL_RED);
+			}
+			else if (mRect.Type == CODE)
+			{
+				 fl_font(FL_HELVETICA_BOLD,15);
+			fl_draw_box( type, mRect.left, mRect.top, mRect.Width(), mRect.Height(), FL_WHITE);
+
+			 fl_font(FL_HELVETICA,15);
+			fl_draw_box( type, mRect.left, mRect.top, mRect.Width(), mRect.Height(), FL_BLUE);
+			}
+			else
+			{
 			fl_draw_box( type, mRect.left, mRect.top, mRect.Width(), mRect.Height(), FL_BLACK);
+			}
 
 			TString temp;
-			temp.format("Crop %d", c);
+			if (mRect.Type == IMAGE)
+			{
+				temp.format("Crop %d Image", c);
+			}
+			else if (mRect.Type == CODE)
+			{
+				temp.format("Crop %d Code", c);
+			}
+			else
+			{
+				temp.format("Crop %d", c);
+			}
+
 			fl_draw(temp, mRect.left, mRect.top, mRect.Width(), mRect.Height(), FL_ALIGN_TOP);
 
 			if(i==mSelectedRect)
@@ -1112,6 +1611,7 @@ void PDFwin::draw()
 	fl_draw(temp, 0,0,w(), h(), FL_ALIGN_CENTER);
 	*/
 
+
 	
 FlLayout* layout=mLayout->findLayout("Automatic segmentation");
 double cropT=layout->findSlider("Crop T")->value()/100.0;
@@ -1128,4 +1628,133 @@ fl_draw_box( FL_BORDER_FRAME, 0, 0, ww, wCropT, FL_BLACK);
 fl_draw_box( FL_BORDER_FRAME, 0, hh-wCropB, ww, wCropB, FL_BLACK);
 fl_draw_box( FL_BORDER_FRAME, 0, 0, wCropL, hh, FL_BLACK);
 fl_draw_box( FL_BORDER_FRAME, ww-wCropR, 0, wCropR, hh, FL_BLACK);
+}
+
+bool PDFwin::There_Are_Saved_Rects(void)
+{
+ #ifdef unix
+	  std::string xml_Filename =  _filename.substr( _filename.find_last_of( '/' ) +1 );
+ #else
+	  std::string xml_Filename =  _filename.substr( _filename.find_last_of( '\\' ) +1 );
+ #endif
+	  xml_Filename = ".//Saved_Rects//" + xml_Filename.substr( 0, xml_Filename.find_last_of( '.' ) ) + ".xml";
+
+
+	std::string xmlText;
+	if (!read_file_to_string(xml_Filename, xmlText))
+		return false;
+
+	std::string pageBlock;
+	if (!get_page_block(xmlText, mCurrPage, pageBlock))
+		return false;
+
+	std::string numRectsText;
+	if (!find_tag_value(pageBlock, "NumRects", numRectsText))
+		return false;
+
+	return std::atoi(numRectsText.c_str()) > 0;
+}
+
+bool PDFwin::Load_SelectionRectangles(std::list<SelectionRectangle>& Sel)
+{
+ #ifdef unix
+	  std::string xml_Filename =  _filename.substr( _filename.find_last_of( '/' ) +1 );
+ #else
+	  std::string xml_Filename =  _filename.substr( _filename.find_last_of( '\\' ) +1 );
+ #endif
+	  xml_Filename = ".//Saved_Rects//" + xml_Filename.substr( 0, xml_Filename.find_last_of( '.' ) ) + ".xml";
+
+
+	  std::string xmlText;
+	  if (!read_file_to_string(xml_Filename, xmlText))
+		  return false;
+
+	  std::string pageBlock;
+	  if (!get_page_block(xmlText, mCurrPage, pageBlock))
+		  return false;
+
+	  std::string numRectsText;
+	  if (!find_tag_value(pageBlock, "NumRects", numRectsText))
+		  return false;
+
+	  const int iNumRects = std::atoi(numRectsText.c_str());
+	  if (iNumRects <= 0)
+		  return false;
+
+	  for (int i = 1; i <= iNumRects; ++i)
+	  {
+		  const std::string rectOpen = "<Rect_Number" + std::to_string(i) + ">";
+		  const std::string rectClose = "</Rect_Number" + std::to_string(i) + ">";
+
+		  const size_t rectStart = pageBlock.find(rectOpen);
+		  if (rectStart == std::string::npos)
+			  continue;
+		  const size_t rectContentStart = rectStart + rectOpen.size();
+		  const size_t rectEnd = pageBlock.find(rectClose, rectContentStart);
+		  if (rectEnd == std::string::npos)
+			  continue;
+
+		  std::string rectBlock = pageBlock.substr(rectContentStart, rectEnd - rectContentStart);
+		  std::string temp;
+		  SelectionRectangle selRect;
+
+		  if (!find_tag_value(rectBlock, "p1_x", temp)) continue;
+		  selRect.p1.x = std::atof(temp.c_str());
+		  if (!find_tag_value(rectBlock, "p1_y", temp)) continue;
+		  selRect.p1.y = std::atof(temp.c_str());
+		  if (!find_tag_value(rectBlock, "p2_x", temp)) continue;
+		  selRect.p2.x = std::atof(temp.c_str());
+		  if (!find_tag_value(rectBlock, "p2_y", temp)) continue;
+		  selRect.p2.y = std::atof(temp.c_str());
+		  if (!find_tag_value(rectBlock, "Type", temp)) continue;
+		  selRect.Type = (Rect_Type)std::atoi(temp.c_str());
+
+		  Sel.push_back(selRect);
+	  }
+
+	  return !Sel.empty();
+}
+
+void PDFwin::Save_SelectionRectangles(void)
+{
+#ifdef unix
+	std::string xml_Filename = _filename.substr(_filename.find_last_of('/') + 1);
+#else
+	std::string xml_Filename = _filename.substr(_filename.find_last_of('\\') + 1);
+#endif
+	xml_Filename = ".//Saved_Rects//" + xml_Filename.substr(0, xml_Filename.find_last_of('.')) + ".xml";
+
+	printf("%s\n", xml_Filename.c_str());
+	printf("Saving Recs\n");
+
+	FILE* file = fopen(xml_Filename.c_str(), "wt");
+	if (!file)
+	{
+		printf("file open error %s\n", xml_Filename.c_str());
+		return;
+	}
+
+	fprintf(file, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+	fprintf(file, "<SavedRects>\n");
+	fprintf(file, "    <Page index=\"%d\">\n", mCurrPage);
+	fprintf(file, "        <NumRects>%d</NumRects>\n", (int)mRects.size());
+
+	int iRec_Count = 0;
+	for (std::list<SelectionRectangle>::const_iterator it = mRects.begin(); it != mRects.end(); ++it)
+	{
+		++iRec_Count;
+		const SelectionRectangle& sel_rect = *it;
+
+		fprintf(file, "        <Rect_Number%d>\n", iRec_Count);
+		fprintf(file, "            <p1_x>%.17g</p1_x>\n", sel_rect.p1.x);
+		fprintf(file, "            <p1_y>%.17g</p1_y>\n", sel_rect.p1.y);
+		fprintf(file, "            <p2_x>%.17g</p2_x>\n", sel_rect.p2.x);
+		fprintf(file, "            <p2_y>%.17g</p2_y>\n", sel_rect.p2.y);
+		fprintf(file, "            <Type>%d</Type>\n", (int)sel_rect.Type);
+		fprintf(file, "        </Rect_Number%d>\n", iRec_Count);
+	}
+
+	fprintf(file, "    </Page>\n");
+	fprintf(file, "</SavedRects>\n");
+	fclose(file);
 }

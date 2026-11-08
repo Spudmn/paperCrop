@@ -30,6 +30,9 @@ bindTargetMainLib={
 
 			void getRectSize(int pageNo, int rectNo, SelectionRectangle& rect);
 			void getRectImage_width(int pageNo, int rectNo, int width, CImage& image);
+			void getRectHTML(int pageNo, int rectNo,int width,bool TextOnly,const char* html);
+			void Text_To_HTML(const char* Text_Filename, const char* HTML_Filename);
+			void getRectHTML_OCR(int pageNo, int rectNo,CImage& image);
 			void getRectImage_height(int pageNo, int rectNo, int height, CImage& image);
 			void load(const char* filename);
 			double getDPI_height(int pageNo, int rectNo, int height);
@@ -37,10 +40,14 @@ bindTargetMainLib={
 			void setStatus(const char* o);
 			int getNumPages();
 			int getNumRects();
+			bool Rect_Is_Image(int RectNum);
+			bool Rect_Is_Code(int RectNum);
 			double pageCropWidth(int pageNo);
 			double pageCropHeight(int pageNo);
 			void setCurPage(int pageNo);
 			void pageChanged();
+			void Save_SelectionRectangles(void);
+			void NextPage(void);
 			void redraw();
 			void deleteAllFiles();
 			void deleteAllFilesWithoutConfirm();
@@ -376,6 +383,7 @@ static void inputType(FlLayout::Widget& w, const char* str)
 			void trimVertSpaces(CImage& inout, int min_gap, int max_gap, int thr_white) ;
 			bool CreateDirectory(const char *PathToCreate);
 			bool DeleteAllFiles(const char* path, const char* mask,bool bConfirm);
+			void Join_HTML_Files(const char* List_Filename, const char* Output_Filename);
 			]]}
 		},
 	}
@@ -418,6 +426,7 @@ function generateMainLib()
 	void trimVertSpaces(CImage& inout, int min_gap, int max_gap, int thr_white) ;
 	bool CreateDirectory(const char *PathToCreate);
 	bool DeleteAllFiles(const char* path, const char* mask,bool bConfirm);
+	void Join_HTML_Files(const char* List_Filename, const char* Output_Filename);
 	]])
 	writeDefinitions(bindTargetMainLib, 'Register_mainlib') -- input bindTarget can be non-overlapping subset of entire bindTarget 
 	flushWritten('../luna_mainlib.cpp') -- write to cpp file only when there exist modifications -> no-recompile.

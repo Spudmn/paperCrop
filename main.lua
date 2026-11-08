@@ -204,6 +204,7 @@ function ctor()
 	panel:create("Choice", "options","",0)
 	setOptionMenu()
 	
+	panel:create("Button", "Save Rect", "Save Rect",0);
 	panel:create("Button", "Process current page", "Process current page",0);
 	panel:widget(0):deactivate();
 
@@ -347,6 +348,11 @@ function onCallback(w, userData)
 		local menuText=w:menuText()
 		panel:findWidget("Option_Input"):inputValue(processOption(menuText))
 		--print('hihi')
+		return true
+	elseif (w:id()=="Save Rect") then
+	    local outdir=string.sub(win.filename, 1, -5)
+		win:Save_SelectionRectangles();
+		win:NextPage();
 		return true
 	elseif(w:id()=="Process current page" or  w:id()=="Process all pages") then
 		panel:findWidget("Process current page"):deactivate();
@@ -518,4 +524,27 @@ function sortRect(mat)
 		mat:set(i-1, 2, math.floor(v.right *res[1]+0.5))
 		mat:set(i-1, 3, math.floor(v.bottom *res[2]+0.5))
 	end
+end
+
+basename = function(path)
+	local i = string.len(path)
+
+	while string.sub(path, i, i) == "/" and i > 0 do
+		path = string.sub(path, 1, i - 1)
+		i = i - 1
+	end
+	while i > 0 do
+		if string.sub(path, i, i) == "/" then
+			break
+		end
+		i = i - 1
+	end
+	if i > 0 then
+		path = string.sub(path, i + 1, -1)
+	end
+	if path == "" then
+		path = "/"
+	end
+
+	return path
 end
